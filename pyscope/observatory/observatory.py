@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import configparser
 import datetime
 import glob
@@ -11,7 +13,7 @@ import tempfile
 import threading
 import time
 from ast import literal_eval
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -31,10 +33,237 @@ from . import ObservatoryException
 from .ascom_device import ASCOMDevice
 from .device import Device
 
+from uuid import uuid4
+from ..db import Base
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Float,
+    String,
+    Uuid,
+    JSON
+)
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import (
+    Mapped,
+    MappedAsDataclass,
+    mapped_column,
+    relationship
+)
+
 logger = logging.getLogger(__name__)
+logger.debug("observatory.py")
 
 
-class Observatory:
+class Observatory(MappedAsDataclass, Base):
+    __tablename__ = "observatory"
+
+    uuid: Mapped[Uuid] = mapped_column(
+        Uuid,
+        primary_key=True,
+        nullable=False,
+        init=False,
+        default_factory=uuid4
+    )
+
+    version_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        init=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        init=False,
+        default=datetime.now(tz=timezone.utc),
+    )
+
+    last_modified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        init=False,
+        default=datetime.now(tz=timezone.utc),
+        onupdate=datetime.now(tz=timezone.utc),
+    )
+
+    site_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="pyscope Site"
+    )
+    instrument_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="pyscope Instrument"
+    )
+    instrument_description: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="pyscope is a pure-Python telescope control package."
+    )
+    latitude: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="00d00m00.00000s"
+    )
+    longitude: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="00d00m00.00000s"
+    )
+    elevation: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    diameter: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    focal_length: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    cooler_setpoint: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    cooler_tolerance: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    max_dimension: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0
+    )
+    min_altitude: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=10.0
+    )
+    settle_time: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=5
+    )
+    slew_rate: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0
+    )
+    instrument_reconfig_times: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default={}
+    )
+
+    camera_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("camera.uuid"),
+        nullable=True
+    )
+    camera: Mapped[Camera] = relationship(
+        "Camera",
+        back_populates="observatory"
+    )
+    
+    cover_calibrator_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("cover_calibrator.uuid"),
+        nullable=True
+    )
+    cover_calibrator: Mapped[CoverCalibrator] = relationship(
+        "CoverCalibrator",
+        back_populates="observatory"
+    )
+
+    dome_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("dome.uuid"),
+        nullable=True
+    )
+    dome: Mapped[Dome] = relationship(
+        "Dome",
+        back_populates="observatory"
+    )
+
+    filter_wheel_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("filter_wheel.uuid"),
+        nullable=True
+    )
+    filter_wheel: Mapped[FilterWheel] = relationship(
+        "FilterWheel",
+        back_populates="observatory"
+    )
+
+    focuser_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("focuser.uuid"),
+        nullable=True
+    )
+    focuser: Mapped[Focuser] = relationship(
+        "Focuser",
+        back_populates="observatory"
+    )
+
+    observing_conditions_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("observing_conditions.uuid"),
+        nullable=True
+    )
+    observing_conditions: Mapped[ObservingConditions] = relationship(
+        "ObservingConditions",
+        back_populates="observatory"
+    )
+
+    rotator_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("rotator.uuid"),
+        nullable=True
+    )
+    rotator: Mapped[Rotator] = relationship(
+        "Rotator",
+        back_populates="observatory"
+    )
+
+    safety_monitor_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("safety_monitor.uuid"),
+        nullable=True
+    )
+    safety_monitor: Mapped[SafetyMonitor] = relationship(
+        "SafetyMonitor",
+        back_populates="observatory"
+    )
+
+    switch_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("switch.uuid"),
+        nullable=True
+    )
+    switch: Mapped[Switch] = relationship(
+        "Switch",
+        back_populates="observatory"
+    )
+
+    telescope_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("telescope.uuid"),
+        nullable=True
+    )
+    telescope: Mapped[Telescope] = relationship(
+        "Telescope",
+        back_populates="observatory"
+    )
+
+    autofocus_uuid: Mapped[Uuid] = mapped_column(
+        ForeignKey("autofocus.uuid"),
+        nullable=True
+    )
+    autofocus: Mapped[Autofocus] = relationship(
+        "Autofocus",
+        back_populates="observatory"
+    )
     def __init__(self, config_path=None, **kwargs):
         logger.debug("Observatory.__init__() called")
         logger.debug("config_path: %s" % config_path)
@@ -55,80 +284,7 @@ class Observatory:
         self._config["telescope"] = {}
         self._config["autofocus"] = {}
 
-        self._site_name = "pyscope Site"
-        self._instrument_name = "pyscope Instrument"
-        self._instrument_description = (
-            "pyscope is a pure-Python telescope control package."
-        )
-        self._latitude = "00d00m00.00000s"
-        self._longitude = "00d00m00.00000s"
-        self._elevation = 0.0
-        self._diameter = 0.0
-        self._focal_length = 0.0
-
-        self._camera = ""
-        self._camera_driver = ""
-        self._camera_kwargs = []
-        self._cooler_setpoint = 0.0
-        self._cooler_tolerance = 0.0
-        self._max_dimension = 0
-
-        self._cover_calibrator = ""
-        self._cover_calibrator_driver = ""
-        self._cover_calibrator_kwargs = []
-        self._cover_calibrator_alt = 0.0
-        self._cover_calibrator_az = 0.0
-
-        self._dome = ""
-        self._dome_driver = ""
-        self._dome_kwargs = []
-
-        self._filter_wheel = ""
-        self._filter_wheel_driver = ""
-        self._filter_wheel_kwargs = []
-        self._filters = []
-        self._filter_focus_offsets = []
-
-        self._focuser = None
-        self._focuser_driver = None
-        self._focuser_kwargs = None
-
-        self._observing_conditions = None
-        self._observing_conditions_driver = None
-        self._observing_conditions_kwargs = None
-
-        self._rotator = None
-        self._rotator_driver = None
-        self._rotator_kwargs = None
-        self._rotator_reverse = False
-        self._rotator_min_angle = None
-        self._rotator_max_angle = None
-
-        self._safety_monitor = []
-        self._safety_monitor_driver = []
-        self._safety_monitor_kwargs = []
-
-        self._switch = []
-        self._switch_driver = []
-        self._switch_kwargs = []
-
-        self._telescope = None
-        self._telescope_driver = None
-        self._telescope_kwargs = None
-        self._min_altitude = 10 * u.deg
-        self._settle_time = 5
-
-        self._autofocus = None
-        self._autofocus_driver = None
-        self._autofocus_kwargs = None
-
-        self._slew_rate = None
-        self._instrument_reconfig_times = None
-
         self._maxim = None
-
-        if not os.path.exists(config_path):
-            raise ObservatoryException("Config file '%s' not found" % config_path)
 
         if config_path is not None:
             logger.info(
@@ -4045,535 +4201,6 @@ class Observatory:
             self.plate_scale * self.camera.PixelSizeY * 1e-6,
         )
 
-    @property
-    def site_name(self):
-        logger.debug("Observatory.site_name property called")
-        return self._site_name
-
-    @site_name.setter
-    def site_name(self, value):
-        logger.debug(f"Observatory.site_name = {value} called")
-        self._site_name = value if value is not None or value != "" else None
-        self._config["site"]["site_name"] = (
-            self._site_name if self._site_name is not None else ""
-        )
-
-    @property
-    def instrument_name(self):
-        logger.debug("Observatory.instrument_name property called")
-        return self._instrument_name
-
-    @instrument_name.setter
-    def instrument_name(self, value):
-        logger.debug(f"Observatory.instrument_name = {value} called")
-        self._instrument_name = value if value is not None or value != "" else None
-        self._config["site"]["instrument_name"] = (
-            self._instrument_name if self._instrument_name is not None else ""
-        )
-
-    @property
-    def instrument_description(self):
-        logger.debug("Observatory.instrument_description property called")
-        return self._instrument_description
-
-    @instrument_description.setter
-    def instrument_description(self, value):
-        logger.debug(f"Observatory.instrument_description = {value} called")
-        self._instrument_description = (
-            value if value is not None or value != "" else None
-        )
-        self._config["site"]["instrument_description"] = (
-            self._instrument_description
-            if self._instrument_description is not None
-            else ""
-        )
-
-    @property
-    def latitude(self):
-        logger.debug("Observatory.latitude property called")
-        return self._latitude
-
-    @latitude.setter
-    def latitude(self, value):
-        logger.debug(f"Observatory.latitude = {value} called")
-        self._latitude = (
-            coord.Latitude(value) if value is not None or value != "" else None
-        )
-        # If connected, set the telescope site latitude
-        try:
-            if self.telescope.Connected:
-                self.telescope.SiteLatitude = self._latitude.deg
-        except:
-            logger.warning("Telescope not connected, cannot set the driver's latitude")
-
-        self._config["site"]["latitude"] = (
-            self._latitude.to_string(unit=u.degree, sep="dms", precision=5)
-            if self._latitude is not None
-            else ""
-        )
-
-    @property
-    def longitude(self):
-        logger.debug("Observatory.longitude property called")
-        return self._longitude
-
-    @longitude.setter
-    def longitude(self, value):
-        logger.debug(f"Observatory.longitude = {value} called")
-        self._longitude = (
-            coord.Longitude(value, wrap_angle=180 * u.deg)
-            if value is not None or value != ""
-            else None
-        )
-        try:
-            if self.telescope.Connected:
-                self.telescope.SiteLongitude = self._longitude.deg
-        except:
-            logger.warning("Telescope not connected, cannot set the driver's longitude")
-
-        self._config["site"]["longitude"] = (
-            self._longitude.to_string(unit=u.degree, sep="dms", precision=5)
-            if self._longitude is not None
-            else ""
-        )
-
-    @property
-    def elevation(self):
-        logger.debug("Observatory.elevation property called")
-        return self._elevation
-
-    @elevation.setter
-    def elevation(self, value):
-        logger.debug(f"Observatory.elevation = {value} called")
-        self._elevation = (
-            max(float(value), 0) if value is not None or value != "" else None
-        )
-        self._config["site"]["elevation"] = (
-            str(self._elevation) if self._elevation is not None else ""
-        )
-
-    @property
-    def diameter(self):
-        logger.debug("Observatory.diameter property called")
-        return self._diameter
-
-    @diameter.setter
-    def diameter(self, value):
-        logger.debug(f"Observatory.diameter = {value} called")
-        self._diameter = (
-            max(float(value), 0) if value is not None or value != "" else None
-        )
-        self._config["site"]["diameter"] = (
-            str(self._diameter) if self._diameter is not None else ""
-        )
-
-    @property
-    def focal_length(self):
-        logger.debug("Observatory.focal_length property called")
-        return self._focal_length
-
-    @focal_length.setter
-    def focal_length(self, value):
-        logger.debug(f"Observatory.focal_length = {value} called")
-        self._focal_length = (
-            max(float(value), 0) if value is not None or value != "" else None
-        )
-        self._config["site"]["focal_length"] = (
-            str(self._focal_length) if self._focal_length is not None else ""
-        )
-
-    @property
-    def camera(self):
-        logger.debug("Observatory.camera property called")
-        return self._camera
-
-    @property
-    def camera_driver(self):
-        logger.debug("Observatory.camera_driver property called")
-        return self._camera_driver
-
-    @property
-    def camera_kwargs(self):
-        logger.debug("Observatory.camera_kwargs property called")
-        return self._camera_kwargs
-
-    @property
-    def cooler_setpoint(self):
-        logger.debug("Observatory.cooler_setpoint property called")
-        return self._cooler_setpoint
-
-    @cooler_setpoint.setter
-    def cooler_setpoint(self, value):
-        logger.debug(f"Observatory.cooler_setpoint = {value} called")
-        if value is not None:
-            self._cooler_setpoint = value if value is not None or value != "" else None
-            self._config["camera"]["cooler_setpoint"] = (
-                str(self._cooler_setpoint) if self._cooler_setpoint is not None else ""
-            )
-        else:
-            self._cooler_setpoint = None
-            self._config["camera"]["cooler_setpoint"] = ""
-        try:
-            if self.camera.CanSetCCDTemperature and self._cooler_setpoint is not None:
-                self.camera.SetCCDTemperature = self._cooler_setpoint
-                logger.info(f"CCD Temp Set to {self._cooler_setpoint}")
-            else:
-                self._cooler_setpoint = None
-                self._config["camera"]["cooler_setpoint"] = ""
-                logger.warning("Camera does not support setting the CCD temperature")
-        except:
-            pass
-
-    @property
-    def cooler_tolerance(self):
-        logger.debug("Observatory.cooler_tolerance property called")
-        return self._cooler_tolerance
-
-    @cooler_tolerance.setter
-    def cooler_tolerance(self, value):
-        logger.debug(f"Observatory.cooler_tolerance = {value} called")
-        self._cooler_tolerance = (
-            max(float(value), 0) if value is not None or value != "" else None
-        )
-        self._config["camera"]["cooler_tolerance"] = (
-            str(self._cooler_tolerance) if self._cooler_tolerance is not None else ""
-        )
-
-    @property
-    def max_dimension(self):
-        logger.debug("Observatory.max_dimension property called")
-        return self._max_dimension
-
-    @max_dimension.setter
-    def max_dimension(self, value):
-        logger.debug(f"Observatory.max_dimension = {value} called")
-        self._max_dimension = (
-            max(int(value), 1) if value is not None and value != "" else None
-        )
-        self._config["camera"]["max_dimension"] = (
-            str(self._max_dimension) if self._max_dimension is not None else ""
-        )
-        if (
-            self._max_dimension is not None
-            and max(self.camera.CameraXSize, self.camera.CameraYSize)
-            > self._max_dimension
-        ):
-            raise ObservatoryException(
-                "Camera sensor size exceeds maximum dimension of %d"
-                % self._max_dimension
-            )
-
-    @property
-    def cover_calibrator(self):
-        logger.debug("Observatory.cover_calibrator property called")
-        return self._cover_calibrator
-
-    @property
-    def cover_calibrator_driver(self):
-        logger.debug("Observatory.cover_calibrator_driver property called")
-        return self._cover_calibrator_driver
-
-    @property
-    def cover_calibrator_kwargs(self):
-        logger.debug("Observatory.cover_calibrator_kwargs property called")
-        return self._cover_calibrator_kwargs
-
-    @property
-    def cover_calibrator_alt(self):
-        logger.debug("Observatory.cover_calibrator_alt property called")
-        return self._cover_calibrator_alt
-
-    @cover_calibrator_alt.setter
-    def cover_calibrator_alt(self, value):
-        logger.debug(f"Observatory.cover_calibrator_alt = {value} called")
-        self._cover_calibrator_alt = (
-            min(max(float(value), 0), 90) if value is not None and value != "" else None
-        )
-        self._config["cover_calibrator"]["cover_calibrator_alt"] = (
-            str(self._cover_calibrator_alt)
-            if self._cover_calibrator_alt is not None
-            else ""
-        )
-
-    @property
-    def cover_calibrator_az(self):
-        logger.debug("Observatory.cover_calibrator_az property called")
-        return self._cover_calibrator_az
-
-    @cover_calibrator_az.setter
-    def cover_calibrator_az(self, value):
-        logger.debug(f"Observatory.cover_calibrator_az = {value} called")
-        self._cover_calibrator_az = (
-            min(max(float(value), 0), 360)
-            if value is not None and value != ""
-            else None
-        )
-        self._config["cover_calibrator"]["cover_calibrator_az"] = (
-            str(self._cover_calibrator_az)
-            if self._cover_calibrator_az is not None
-            else ""
-        )
-
-    @property
-    def dome(self):
-        logger.debug("Observatory.dome property called")
-        return self._dome
-
-    @property
-    def dome_driver(self):
-        logger.debug("Observatory.dome_driver property called")
-        return self._dome_driver
-
-    @property
-    def dome_kwargs(self):
-        logger.debug("Observatory.dome_kwargs property called")
-        return self._dome_kwargs
-
-    @property
-    def filter_wheel(self):
-        logger.debug("Observatory.filter_wheel property called")
-        return self._filter_wheel
-
-    @property
-    def filter_wheel_driver(self):
-        logger.debug("Observatory.filter_wheel_driver property called")
-        return self._filter_wheel_driver
-
-    @property
-    def filter_wheel_kwargs(self):
-        logger.debug("Observatory.filter_wheel_kwargs property called")
-        return self._filter_wheel_kwargs
-
-    @property
-    def filters(self):
-        logger.debug("Observatory.filters property called")
-        return self._filters
-
-    @filters.setter
-    def filters(self, value, position=None):
-        logger.debug(f"Observatory.filters = {value} called")
-        if value is self._filters:
-            return
-        if type(value) is list:
-            self._filters = value
-        if position is None:
-            self._filters = (
-                [v for v in value.replace(" ", "").split(",")]
-                if value is not None or value != ""
-                else None
-            )
-        else:
-            self._filters[position] = (
-                str(value) if value is not None or value != "" else None
-            )
-        self._config["filter_wheel"]["filters"] = (
-            ", ".join(self._filters) if self._filters is not None else ""
-        )
-
-    @property
-    def filter_focus_offsets(self):
-        logger.debug("Observatory.filter_focus_offsets property called")
-        return self._filter_focus_offsets
-
-    @filter_focus_offsets.setter
-    def filter_focus_offsets(self, value, filt=None):
-        logger.debug(f"Observatory.filter_focus_offsets = {value} called")
-        if value is self._filter_focus_offsets:
-            return
-        if type(value) is dict:
-            if value.keys() == self.filters:
-                self._filter_focus_offsets = value
-            else:
-                raise ObservatoryException(
-                    "Filter focus offsets dictionary must have keys matching filters"
-                )
-        if filt is None:
-            self._filter_focus_offsets = (
-                dict(zip(self.filters, [int(v) for v in value.split(",")]))
-                if value is not None or value != ""
-                else None
-            )
-        else:
-            self._filter_focus_offsets[filt] = (
-                int(value) if value is not None or value != "" else None
-            )
-        self._config["filter_wheel"]["filter_focus_offsets"] = (
-            ",".join([str(v) for v in self._filter_focus_offsets.values()])
-            if self._filter_focus_offsets is not None
-            else ""
-        )
-
-    @property
-    def focuser(self):
-        logger.debug("Observatory.focuser property called")
-        return self._focuser
-
-    @property
-    def focuser_driver(self):
-        logger.debug("Observatory.focuser_driver property called")
-        return self._focuser_driver
-
-    @property
-    def focuser_kwargs(self):
-        logger.debug("Observatory.focuser_kwargs property called")
-        return self._focuser_kwargs
-
-    @property
-    def observing_conditions(self):
-        logger.debug("Observatory.observing_conditions property called")
-        return self._observing_conditions
-
-    @property
-    def observing_conditions_driver(self):
-        logger.debug("Observatory.observing_conditions_driver property called")
-        return self._observing_conditions_driver
-
-    @property
-    def observing_conditions_kwargs(self):
-        logger.debug("Observatory.observing_conditions_kwargs property called")
-        return self._observing_conditions_kwargs
-
-    @property
-    def rotator(self):
-        logger.debug("Observatory.rotator property called")
-        return self._rotator
-
-    @property
-    def rotator_driver(self):
-        logger.debug("Observatory.rotator_driver property called")
-        return self._rotator_driver
-
-    @property
-    def rotator_kwargs(self):
-        logger.debug("Observatory.rotator_kwargs property called")
-        return self._rotator_kwargs
-
-    @property
-    def rotator_reverse(self):
-        logger.debug("Observatory.rotator_reverse property called")
-        return self._rotator_reverse
-
-    @rotator_reverse.setter
-    def rotator_reverse(self, value):
-        logger.debug(f"Observatory.rotator_reverse = {value} called")
-        self._rotator_reverse = (
-            bool(value) if value is not None or value != "" else None
-        )
-        self._config["rotator"]["rotator_reverse"] = (
-            str(self._rotator_reverse) if self._rotator_reverse is not None else ""
-        )
-        try:
-            if self.rotator is not None:
-                self.rotator.Reverse = self._rotator_reverse
-        except:
-            logger.warning(
-                "Rotator not connected, you should reconnect to the rotator and then set the reverse property"
-            )
-
-    @property
-    def rotator_min_angle(self):
-        logger.debug("Observatory.rotator_min_angle property called")
-        return self._rotator_min_angle
-
-    @rotator_min_angle.setter
-    def rotator_min_angle(self, value):
-        logger.debug(f"Observatory.rotator_min_angle = {value} called")
-        self._rotator_min_angle = (
-            float(value) if value is not None or value != "" else None
-        )
-        self._config["rotator"]["rotator_min_angle"] = (
-            str(self._rotator_min_angle) if self._rotator_min_angle is not None else ""
-        )
-
-    @property
-    def rotator_max_angle(self):
-        logger.debug("Observatory.rotator_max_angle property called")
-        return self._rotator_max_angle
-
-    @rotator_max_angle.setter
-    def rotator_max_angle(self, value):
-        logger.debug(f"Observatory.rotator_max_angle = {value} called")
-        self._rotator_max_angle = (
-            float(value) if value is not None or value != "" else None
-        )
-        self._config["rotator"]["rotator_max_angle"] = (
-            str(self._rotator_max_angle) if self._rotator_max_angle is not None else ""
-        )
-
-    @property
-    def safety_monitor(self):
-        logger.debug("Observatory.safety_monitor property called")
-        return self._safety_monitor
-
-    @property
-    def safety_monitor_driver(self):
-        logger.debug("Observatory.safety_monitor_driver property called")
-        return self._safety_monitor_driver
-
-    @property
-    def safety_monitor_kwargs(self):
-        logger.debug("Observatory.safety_monitor_kwargs property called")
-        return self._safety_monitor_kwargs
-
-    @property
-    def switch(self):
-        logger.debug("Observatory.switch property called")
-        return self._switch
-
-    @property
-    def switch_driver(self):
-        logger.debug("Observatory.switch_driver property called")
-        return self._switch_driver
-
-    @property
-    def switch_kwargs(self):
-        logger.debug("Observatory.switch_kwargs property called")
-        return self._switch_kwargs
-
-    @property
-    def telescope(self):
-        logger.debug("Observatory.telescope property called")
-        return self._telescope
-
-    @property
-    def telescope_driver(self):
-        logger.debug("Observatory.telescope_driver property called")
-        return self._telescope_driver
-
-    @property
-    def telescope_kwargs(self):
-        logger.debug("Observatory.telescope_kwargs property called")
-        return self._telescope_kwargs
-
-    @property
-    def min_altitude(self):
-        logger.debug("Observatory.min_altitude property called")
-        return self._min_altitude
-
-    # JW EDIT
-
-    @min_altitude.setter
-    def min_altitude(self, value):
-        logger.debug(f"Setting min_altitude = {value}")
-        try:
-            # Check if the value is already a Quantity with unit of degrees
-            if isinstance(value, u.Quantity):
-                value = value.to(u.deg)
-            else:
-                # Assume the value is numeric and needs degree units
-                value = float(value) * u.deg
-            # Ensure value is within physical limits [0, 90] degrees
-            value = max(0 * u.deg, min(90 * u.deg, value))
-            self._min_altitude = value
-            self._config["telescope"]["min_altitude"] = str(
-                value.value
-            )  # save the numeric part
-        except ValueError:
-            logger.error(f"Invalid type for min_altitude: {value}")
-            raise ValueError(
-                "min_altitude must be a number or an astropy Quantity with angle units."
-            )
-
     # @min_altitude.setter
     # def min_altitude(self, value):
     #     logger.debug(f"Observatory.min_altitude = {value} called")
@@ -4590,66 +4217,6 @@ class Observatory:
     #         if self._min_altitude is not None
     #         else ""
     #     )
-
-    @property
-    def settle_time(self):
-        logger.debug("Observatory.settle_time property called")
-        return self._settle_time
-
-    @settle_time.setter
-    def settle_time(self, value):
-        logger.debug(f"Observatory.settle_time = {value} called")
-        self._settle_time = (
-            max(float(value), 0) if value is not None or value != "" else None
-        )
-        self._config["telescope"]["settle_time"] = (
-            str(self._settle_time) if self._settle_time is not None else ""
-        )
-
-    @property
-    def autofocus(self):
-        logger.debug("Observatory.autofocus property called")
-        return self._autofocus
-
-    @property
-    def autofocus_driver(self):
-        logger.debug("Observatory.autofocus_driver property called")
-        return self._autofocus_driver
-
-    @property
-    def autofocus_kwargs(self):
-        logger.debug("Observatory.autofocus_kwargs property called")
-        return self._autofocus_kwargs
-
-    @property
-    def slew_rate(self):
-        logger.debug("Observatory.slew_rate property called")
-        return self._slew_rate
-
-    @slew_rate.setter
-    def slew_rate(self, value):
-        logger.debug(f"Observatory.slew_rate = {value} called")
-        self._slew_rate = float(value) if value is not None or value != "" else None
-        self._config["scheduling"]["slew_rate"] = (
-            str(self._slew_rate) if self._slew_rate is not None else ""
-        )
-
-    @property
-    def instrument_reconfig_times(self):
-        logger.debug("Observatory.instrument_reconfig_times property called")
-        return self._instrument_reconfig_times
-
-    @instrument_reconfig_times.setter
-    def instrument_reconfig_times(self, value):
-        logger.debug(f"Observatory.instrument_reconfig_times = {value} called")
-        self._instrument_reconfig_times = (
-            value if value is not None or value != "" else {}
-        )
-        self._config["scheduling"]["instrument_reconfig_times"] = (
-            json.dumps(self._instrument_reconfig_times)
-            if self._instrument_reconfig_times is not None
-            else "{}"
-        )
 
     @property
     def last_camera_shutter_status(self):
